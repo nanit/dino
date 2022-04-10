@@ -95,6 +95,74 @@ def display_instances(image, mask, fname="test", figsize=(5, 5), blur=False, con
     return
 
 
+def get_input_transforms(image_size):
+    return pth_transforms.Compose([
+        pth_transforms.Resize(image_size),
+        pth_transforms.ToTensor(),
+        pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+    ])
+
+
+def get_self_attention_from_image(_img, _model, device, patch_size=8, image_size=(480, 480), transform=None, threshold=None):
+    if transform is None:
+        transform = get_input_transforms(image_size)
+
+    _input_tensor_to_model = transform(_img)
+
+    # make the image divisible by the patch size
+    w, h = _input_tensor_to_model.shape[1] - _input_tensor_to_model.shape[1] % patch_size, _input_tensor_to_model.shape[2] - _input_tensor_to_model.shape[2] % patch_size
+    _input_tensor_to_model = _input_tensor_to_model[:, :w, :h].unsqueeze(0)
+
+    w_featmap = _input_tensor_to_model.shape[-2] // patch_size
+    h_featmap = _input_tensor_to_model.shape[-1] // patch_size
+
+    _attentions = _model.get_last_selfattention(_input_tensor_to_model.to(device))
+
+    _nh = _attentions.shape[1]   # number of head
+
+    # we keep only the output patch attention
+    _attentions = _attentions[0, :, 0, 1:].reshape(_nh, -1)
+
+    _th_attn = None
+    if threshold is not None:
+        # we keep only a certain percentage of the mass
+        val, idx = torch.sort(_attentions)
+        val /= torch.sum(val, dim=1, keepdim=True)
+        cumval = torch.cumsum(val, dim=1)
+        _th_attn = cumval > (1 - threshold)
+        idx2 = torch.argsort(idx)
+        for head in range(_nh):
+            _th_attn[head] = _th_attn[head][idx2[head]]
+        _th_attn = _th_attn.reshape(_nh, w_featmap, h_featmap).float()
+        # interpolate
+        _th_attn = nn.functional.interpolate(_th_attn.unsqueeze(0), scale_factor=patch_size, mode="nearest")[0].cpu().numpy()
+
+    _attentions = _attentions.reshape(_nh, w_featmap, h_featmap)
+    _attentions = nn.functional.interpolate(_attentions.unsqueeze(0), scale_factor=patch_size, mode="nearest")[0].cpu().numpy()
+
+    return _input_tensor_to_model, _attentions, _th_attn, _nh
+
+
+def load_model_eval(pretrained_weights, arch, patch_size, checkpoint_key='teacher'):
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    # build model
+    _model = vits.__dict__[arch](patch_size=patch_size, num_classes=0)
+    for p in _model.parameters():
+        p.requires_grad = False
+    _model.eval()
+    _model.to(device)
+    utils.load_pretrained_weights(_model, pretrained_weights, checkpoint_key, arch, patch_size, device=device)
+
+    return _model, device
+
+
+def load_image_from_path(image_path):
+    with open(image_path, 'rb') as fid:
+        _img = Image.open(fid)
+        _img = _img.convert('RGB')
+    return _img
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Visualize Self-Attention maps')
     parser.add_argument('--arch', default='vit_small', type=str,
@@ -111,41 +179,7 @@ if __name__ == '__main__':
         obtained by thresholding the self-attention maps to keep xx% of the mass.""")
     args = parser.parse_args()
 
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    # build model
-    model = vits.__dict__[args.arch](patch_size=args.patch_size, num_classes=0)
-    for p in model.parameters():
-        p.requires_grad = False
-    model.eval()
-    model.to(device)
-    if os.path.isfile(args.pretrained_weights):
-        state_dict = torch.load(args.pretrained_weights, map_location="cpu")
-        if args.checkpoint_key is not None and args.checkpoint_key in state_dict:
-            print(f"Take key {args.checkpoint_key} in provided checkpoint dict")
-            state_dict = state_dict[args.checkpoint_key]
-        # remove `module.` prefix
-        state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
-        # remove `backbone.` prefix induced by multicrop wrapper
-        state_dict = {k.replace("backbone.", ""): v for k, v in state_dict.items()}
-        msg = model.load_state_dict(state_dict, strict=False)
-        print('Pretrained weights found at {} and loaded with msg: {}'.format(args.pretrained_weights, msg))
-    else:
-        print("Please use the `--pretrained_weights` argument to indicate the path of the checkpoint to evaluate.")
-        url = None
-        if args.arch == "vit_small" and args.patch_size == 16:
-            url = "dino_deitsmall16_pretrain/dino_deitsmall16_pretrain.pth"
-        elif args.arch == "vit_small" and args.patch_size == 8:
-            url = "dino_deitsmall8_300ep_pretrain/dino_deitsmall8_300ep_pretrain.pth"  # model used for visualizations in our paper
-        elif args.arch == "vit_base" and args.patch_size == 16:
-            url = "dino_vitbase16_pretrain/dino_vitbase16_pretrain.pth"
-        elif args.arch == "vit_base" and args.patch_size == 8:
-            url = "dino_vitbase8_pretrain/dino_vitbase8_pretrain.pth"
-        if url is not None:
-            print("Since no pretrained weights have been provided, we load the reference pretrained DINO weights.")
-            state_dict = torch.hub.load_state_dict_from_url(url="https://dl.fbaipublicfiles.com/dino/" + url)
-            model.load_state_dict(state_dict, strict=True)
-        else:
-            print("There is no reference weights available for this model => We use random weights.")
+    model, model_device = load_model_eval(args.pretrained_weights, args.arch, args.patch_size)
 
     # open image
     if args.image_path is None:
@@ -156,58 +190,24 @@ if __name__ == '__main__':
         img = Image.open(BytesIO(response.content))
         img = img.convert('RGB')
     elif os.path.isfile(args.image_path):
-        with open(args.image_path, 'rb') as f:
-            img = Image.open(f)
-            img = img.convert('RGB')
+        img = load_image_from_path(args.image_path)
     else:
         print(f"Provided image path {args.image_path} is non valid.")
         sys.exit(1)
-    transform = pth_transforms.Compose([
-        pth_transforms.Resize(args.image_size),
-        pth_transforms.ToTensor(),
-        pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-    ])
-    img = transform(img)
 
-    # make the image divisible by the patch size
-    w, h = img.shape[1] - img.shape[1] % args.patch_size, img.shape[2] - img.shape[2] % args.patch_size
-    img = img[:, :w, :h].unsqueeze(0)
-
-    w_featmap = img.shape[-2] // args.patch_size
-    h_featmap = img.shape[-1] // args.patch_size
-
-    attentions = model.get_last_selfattention(img.to(device))
-
-    nh = attentions.shape[1] # number of head
-
-    # we keep only the output patch attention
-    attentions = attentions[0, :, 0, 1:].reshape(nh, -1)
-
-    if args.threshold is not None:
-        # we keep only a certain percentage of the mass
-        val, idx = torch.sort(attentions)
-        val /= torch.sum(val, dim=1, keepdim=True)
-        cumval = torch.cumsum(val, dim=1)
-        th_attn = cumval > (1 - args.threshold)
-        idx2 = torch.argsort(idx)
-        for head in range(nh):
-            th_attn[head] = th_attn[head][idx2[head]]
-        th_attn = th_attn.reshape(nh, w_featmap, h_featmap).float()
-        # interpolate
-        th_attn = nn.functional.interpolate(th_attn.unsqueeze(0), scale_factor=args.patch_size, mode="nearest")[0].cpu().numpy()
-
-    attentions = attentions.reshape(nh, w_featmap, h_featmap)
-    attentions = nn.functional.interpolate(attentions.unsqueeze(0), scale_factor=args.patch_size, mode="nearest")[0].cpu().numpy()
+    input_tensor_to_model, attentions, th_attn, num_of_heads = get_self_attention_from_image(img, model, model_device,
+                                                                                             patch_size=args.patch_size, image_size=args.image_size,
+                                                                                             threshold=args.threshold)
 
     # save attentions heatmaps
     os.makedirs(args.output_dir, exist_ok=True)
-    torchvision.utils.save_image(torchvision.utils.make_grid(img, normalize=True, scale_each=True), os.path.join(args.output_dir, "img.png"))
-    for j in range(nh):
+    torchvision.utils.save_image(torchvision.utils.make_grid(input_tensor_to_model, normalize=True, scale_each=True), os.path.join(args.output_dir, "img.png"))
+    for j in range(num_of_heads):
         fname = os.path.join(args.output_dir, "attn-head" + str(j) + ".png")
         plt.imsave(fname=fname, arr=attentions[j], format='png')
         print(f"{fname} saved.")
 
     if args.threshold is not None:
         image = skimage.io.imread(os.path.join(args.output_dir, "img.png"))
-        for j in range(nh):
+        for j in range(num_of_heads):
             display_instances(image, th_attn[j], fname=os.path.join(args.output_dir, "mask_th" + str(args.threshold) + "_head" + str(j) +".png"), blur=False)

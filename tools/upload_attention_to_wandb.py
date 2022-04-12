@@ -32,14 +32,9 @@ def get_image_from_input_tensor(input_tensor_to_model):
 
 
 def get_attention_heatmap(attention_head):
-    # heatmap = cv2.normalize(attention_head, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-    # heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_VIRIDIS)
-    # return heatmap
-
-    heatmap_tmp_fp = 'attention_head.png'
-    plt.imsave(fname=heatmap_tmp_fp, arr=attention_head, format='png')
-    heatmap = Image.open(heatmap_tmp_fp).convert('RGB')
-    return heatmap
+    heatmap = cv2.normalize(attention_head, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_VIRIDIS)
+    return cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
 
 
 def main():

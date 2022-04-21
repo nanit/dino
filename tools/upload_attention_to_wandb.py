@@ -37,6 +37,20 @@ def get_attention_heatmap(attention_head):
     return cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
 
 
+def filter_images(images_metadata, images_paths):
+    images_metadata_filtered = {}
+    for k, v in tqdm(images_metadata.items(), desc='Images Filtering'):
+        if v['is_ir']:
+            continue
+        image_path = os.path.join(IMAGES_FOLDER, k)
+        if image_path not in images_paths:
+            print('image DOES NOT Exist', k)
+            continue
+
+        images_metadata_filtered[k] = v
+    return images_metadata_filtered
+
+
 def main():
     with open(IMAGES_METADATA_JSON, 'r') as f:
         images_metadata = json.load(f)
@@ -51,17 +65,13 @@ def main():
     columns = ['filename', 'image', 'input_image', 'pose', 'attn-head0', 'attn-head1', 'attn-head2', 'attn-head3', 'attn-head4', 'attn-head5', 'embedding']
     attentions_map_table = wandb.Table(columns=columns)
 
-    images_metadata_filtered = {}
-    for k, v in tqdm(images_metadata.items(), desc='Images Filtering'):
-        if v['is_ir']:
-            continue
-        image_path = os.path.join(IMAGES_FOLDER, k)
-        if image_path not in images_paths:
-            print('image DOES NOT Exist', k)
-            continue
-
-        images_metadata_filtered[k] = v
+    images_metadata_filtered = filter_images(images_metadata, images_paths)
     print('Images for Attention', len(images_metadata_filtered.keys()))
+
+    images_metadata_path_split = os.path.splitext(IMAGES_METADATA_JSON)
+    images_metadata_filtered_path = images_metadata_path_split[0] + '_filter' + images_metadata_path_split[1]
+    with open(images_metadata_filtered_path, 'w') as f:
+        json.dump(images_metadata_filtered, f)
 
     with torch.no_grad():
         for k, v in tqdm(images_metadata_filtered.items(), desc='Images'):

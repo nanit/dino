@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import sys
 sys.path.extend(['.', '../'])
 
-from visualize_attention import load_model_eval, get_self_attention_from_image, load_image_from_path
+from visualize_attention import load_model_eval, get_self_attention_from_image, load_image_from_path, get_input_tensor_to_model
 
 
 IMAGES_FOLDER = os.path.expanduser('~/nanit/dino_data/crop_from_full_resolution_images/')
@@ -46,7 +46,9 @@ def main():
 
     model, model_device = load_model_eval(PRETRAINED_MODEL_PATH, VIT_ARCH, PATCH_SIZE)
 
-    columns = ['filename', 'image', 'input_image', 'pose', 'attn-head0', 'attn-head1', 'attn-head2', 'attn-head3', 'attn-head4', 'attn-head5']
+    wandb.Table._MAX_EMBEDDING_DIMENSIONS = 1000  # for uploading np.array for embedding larger than default size
+
+    columns = ['filename', 'image', 'input_image', 'pose', 'attn-head0', 'attn-head1', 'attn-head2', 'attn-head3', 'attn-head4', 'attn-head5', 'embedding']
     attentions_map_table = wandb.Table(columns=columns)
 
     images_metadata_filtered = {}
@@ -66,6 +68,8 @@ def main():
             image_path = os.path.join(IMAGES_FOLDER, k)
             img = load_image_from_path(image_path)
             input_tensor_to_model, attentions, _, num_of_heads = get_self_attention_from_image(img, model, model_device, patch_size=PATCH_SIZE, image_size=IMAGE_SIZE)
+            embedding = model(input_tensor_to_model.to(model_device))
+            embedding_np = embedding.detach().cpu().numpy().reshape(-1)
 
             input_img_to_model_rgb = get_image_from_input_tensor(input_tensor_to_model)
             # input_img_to_model_rgb.save('input_img_to_model_rgb.png')
@@ -79,7 +83,7 @@ def main():
 
             attentions_map_table.add_data(k, wandb.Image(img), wandb.Image(input_img_to_model_rgb), v['pose'],
                                           wandb.Image(attn0), wandb.Image(attn1), wandb.Image(attn2),
-                                          wandb.Image(attn3), wandb.Image(attn4), wandb.Image(attn5))
+                                          wandb.Image(attn3), wandb.Image(attn4), wandb.Image(attn5), embedding_np)
 
     wandb.init(project='self-supervised-exploration', entity='algo', job_type='eval-attn-maps')
     wandb.log({'Attention Maps Table': attentions_map_table})

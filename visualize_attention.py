@@ -104,14 +104,7 @@ def get_input_transforms(image_size):
 
 
 def get_self_attention_from_image(_img, _model, device, patch_size=8, image_size=(480, 480), transform=None, threshold=None):
-    if transform is None:
-        transform = get_input_transforms(image_size)
-
-    _input_tensor_to_model = transform(_img)
-
-    # make the image divisible by the patch size
-    w, h = _input_tensor_to_model.shape[1] - _input_tensor_to_model.shape[1] % patch_size, _input_tensor_to_model.shape[2] - _input_tensor_to_model.shape[2] % patch_size
-    _input_tensor_to_model = _input_tensor_to_model[:, :w, :h].unsqueeze(0)
+    _input_tensor_to_model = get_input_tensor_to_model(_img, patch_size, image_size, transform)
 
     w_featmap = _input_tensor_to_model.shape[-2] // patch_size
     h_featmap = _input_tensor_to_model.shape[-1] // patch_size
@@ -141,6 +134,16 @@ def get_self_attention_from_image(_img, _model, device, patch_size=8, image_size
     _attentions = nn.functional.interpolate(_attentions.unsqueeze(0), scale_factor=patch_size, mode="nearest")[0].cpu().numpy()
 
     return _input_tensor_to_model, _attentions, _th_attn, _nh
+
+
+def get_input_tensor_to_model(_img, patch_size=8, image_size=(480, 480), transform=None):
+    if transform is None:
+        transform = get_input_transforms(image_size)
+    _input_tensor_to_model = transform(_img)
+    # make the image divisible by the patch size
+    w, h = _input_tensor_to_model.shape[1] - _input_tensor_to_model.shape[1] % patch_size, _input_tensor_to_model.shape[2] - _input_tensor_to_model.shape[2] % patch_size
+    _input_tensor_to_model = _input_tensor_to_model[:, :w, :h].unsqueeze(0)
+    return _input_tensor_to_model
 
 
 def load_model_eval(pretrained_weights, arch, patch_size, checkpoint_key='teacher'):

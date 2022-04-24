@@ -1,18 +1,14 @@
 import os
 import json
-import glob
 import torch
 import wandb
-import cv2
-import torchvision
 import numpy as np
 from tqdm import tqdm
-from PIL import Image
-import matplotlib.pyplot as plt
 import sys
 sys.path.extend(['.', '../'])
 
-from visualize_attention import load_model_eval, get_self_attention_from_image, load_image_from_path, get_input_tensor_to_model
+from visualize_attention import load_model_eval, load_image_from_path, get_input_tensor_to_model
+from eval_knn import knn_classifier
 
 from python_tools.Mappings import gen_pose_class_to_number_mapping
 
@@ -50,7 +46,7 @@ def extract_features():
             embedding_all[i] = model(input_tensor_to_model.to(model_device))
             labels[i] = pose_mapping[v['pose']]
 
-    embedding_all, labels = embedding_all.cpu(), labels.cpu()
+    embedding_all, labels = embedding_all.cpu(), labels.cpu().long()
 
     checkpoint_data = {
         'features': embedding_all,
@@ -62,9 +58,65 @@ def extract_features():
     return checkpoint_data['features'], checkpoint_data['labels']
 
 
+@torch.no_grad()
+def nanit_knn_classifier(features, labels, k, temperature, num_classes=6):
+    """
+    based on knn_classifier as in eval_knn.py
+    classify by dataset on his own
+    don't use exp_() in distance transform
+
+    """
+    correct_total, total = 0.0, 0
+    train_features, train_labels = features.clone(), labels.clone()
+    test_features, test_labels = features.clone(), labels.clone()
+
+    train_features = train_features.t()
+    num_test_images, num_chunks = test_labels.shape[0], 100
+    imgs_per_chunk = num_test_images // num_chunks
+    retrieval_one_hot = torch.zeros(k, num_classes).to(train_features.device)
+    for idx in range(0, num_test_images, imgs_per_chunk):
+        # get the features for test images
+        features = test_features[
+            idx : min((idx + imgs_per_chunk), num_test_images), :
+        ]
+        targets = test_labels[idx : min((idx + imgs_per_chunk), num_test_images)]
+        batch_size = targets.shape[0]
+
+        # calculate the dot product and compute top-k neighbors
+        similarity = torch.mm(features, train_features)
+        distances, indices = similarity.topk(k, largest=True, sorted=True)
+        candidates = train_labels.view(1, -1).expand(batch_size, -1)
+        retrieved_neighbors = torch.gather(candidates, 1, indices).long()
+
+        retrieval_one_hot.resize_(batch_size * k, num_classes).zero_()
+        retrieval_one_hot.scatter_(1, retrieved_neighbors.view(-1, 1), 1)
+        distances_transform = distances.clone().div_(temperature)#.exp_()
+        probs = torch.sum(
+            torch.mul(
+                retrieval_one_hot.view(batch_size, -1, num_classes),
+                distances_transform.view(batch_size, -1, 1),
+            ),
+            1,
+        )
+        _, predictions = probs.sort(1, True)
+
+        # find the predictions that match the target
+        correct = predictions.eq(targets.data.view(-1, 1))
+        correct_total = correct_total + correct.narrow(1, 0, 1).sum().item()
+        total += targets.size(0)
+    accuracy = correct_total * 100.0 / total
+    return accuracy
+
+
 def main():
     features, labels = extract_features()
-    print('Features and Labels Exist')
+    temperature = 0.07
+
+    k_list = [1, 10, 20, 100]
+
+    for k in k_list:
+        accuracy = nanit_knn_classifier(features, labels, k, temperature, num_classes=6)
+        print(f"{k}-NN classifier result: {accuracy}")
 
 
 if __name__ == '__main__':

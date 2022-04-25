@@ -8,7 +8,6 @@ import sys
 sys.path.extend(['.', '../'])
 
 from visualize_attention import load_model_eval, load_image_from_path, get_input_tensor_to_model
-from eval_knn import knn_classifier
 
 from python_tools.Mappings import gen_pose_class_to_number_mapping
 
@@ -36,20 +35,23 @@ def extract_features():
     model, model_device = load_model_eval(PRETRAINED_MODEL_PATH, VIT_ARCH, PATCH_SIZE)
     pose_mapping = gen_pose_class_to_number_mapping()
 
-    embedding_all = torch.zeros((n_images, model.embed_dim)).to(model_device)
+    features = torch.zeros((n_images, model.embed_dim)).to(model_device)
     labels = torch.zeros((n_images, )).to(model_device)
     with torch.no_grad():
         for i, (k, v) in enumerate(tqdm(images_metadata_filtered.items(), desc='Images')):
             image_path = os.path.join(IMAGES_FOLDER, k)
             img = load_image_from_path(image_path)
             input_tensor_to_model = get_input_tensor_to_model(img, patch_size=PATCH_SIZE, image_size=IMAGE_SIZE)
-            embedding_all[i] = model(input_tensor_to_model.to(model_device))
+            features[i] = model(input_tensor_to_model.to(model_device))
             labels[i] = pose_mapping[v['pose']]
 
-    embedding_all, labels = embedding_all.cpu(), labels.cpu().long()
+    features = torch.nn.functional.normalize(features, dim=1, p=2)
+    labels = torch.tensor([s for s in labels]).long()
+
+    features, labels = features.cpu(), labels.cpu()
 
     checkpoint_data = {
-        'features': embedding_all,
+        'features': features,
         'labels': labels
     }
     torch.save(checkpoint_data, FEATURES_SAVE_PATH)
@@ -90,7 +92,7 @@ def nanit_knn_classifier(features, labels, k, temperature, num_classes=6):
 
         retrieval_one_hot.resize_(batch_size * k, num_classes).zero_()
         retrieval_one_hot.scatter_(1, retrieved_neighbors.view(-1, 1), 1)
-        distances_transform = distances.clone().div_(temperature)#.exp_()
+        distances_transform = distances.clone().div_(temperature).exp_()
         probs = torch.sum(
             torch.mul(
                 retrieval_one_hot.view(batch_size, -1, num_classes),
@@ -112,7 +114,7 @@ def main():
     features, labels = extract_features()
     temperature = 0.07
 
-    k_list = [1, 10, 20, 100]
+    k_list = [1, 10, 20, 100, 200]
 
     for k in k_list:
         accuracy = nanit_knn_classifier(features, labels, k, temperature, num_classes=6)

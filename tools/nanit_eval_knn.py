@@ -78,10 +78,8 @@ def nanit_knn_classifier(features, labels, k, temperature, num_classes=6):
     retrieval_one_hot = torch.zeros(k, num_classes).to(train_features.device)
     for idx in range(0, num_test_images, imgs_per_chunk):
         # get the features for test images
-        features = test_features[
-            idx : min((idx + imgs_per_chunk), num_test_images), :
-        ]
-        targets = test_labels[idx : min((idx + imgs_per_chunk), num_test_images)]
+        features = test_features[idx: min((idx + imgs_per_chunk), num_test_images), :]
+        targets = test_labels[idx: min((idx + imgs_per_chunk), num_test_images)]
         batch_size = targets.shape[0]
 
         # calculate the dot product and compute top-k neighbors
@@ -92,7 +90,7 @@ def nanit_knn_classifier(features, labels, k, temperature, num_classes=6):
 
         retrieval_one_hot.resize_(batch_size * k, num_classes).zero_()
         retrieval_one_hot.scatter_(1, retrieved_neighbors.view(-1, 1), 1)
-        distances_transform = distances.clone().div_(temperature).exp_()
+        distances_transform = distances.clone().div_(temperature)#.exp_()
         probs = torch.sum(
             torch.mul(
                 retrieval_one_hot.view(batch_size, -1, num_classes),
@@ -104,7 +102,7 @@ def nanit_knn_classifier(features, labels, k, temperature, num_classes=6):
 
         # find the predictions that match the target
         correct = predictions.eq(targets.data.view(-1, 1))
-        correct_total = correct_total + correct.narrow(1, 0, 1).sum().item()
+        correct_total += correct.narrow(1, 0, 1).sum().item()
         total += targets.size(0)
     accuracy = correct_total * 100.0 / total
     return accuracy

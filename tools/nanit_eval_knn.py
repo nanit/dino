@@ -62,9 +62,6 @@ def extract_features():
 def nanit_knn_classifier(checkpoint_data, k, temperature, num_classes=6):
     """
     based on knn_classifier as in eval_knn.py
-    classify by dataset on his own
-    don't use exp_() in distance transform
-
     """
     correct_total, total = 0.0, 0
     train_features, train_labels = checkpoint_data['features']['train'], checkpoint_data['labels']['train']

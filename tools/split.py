@@ -11,9 +11,9 @@ IMAGES_METADATA_JSON = os.path.expanduser('~/nanit/dino_data/crop_from_full_reso
 UPLOAD_TO_S3 = True
 
 
-class DINOSplit(BaseSplitModule):
+class DinoSplit(BaseSplitModule):
     def __init__(self, db_json_path: str, upload_to_s3: bool = False):
-        super(DINOSplit, self).__init__(db_json_path=db_json_path, task='dino', upload_to_s3=upload_to_s3)
+        super(DinoSplit, self).__init__(db_json_path=db_json_path, task='dino', upload_to_s3=upload_to_s3)
 
         self.pose_class = {}
         self.baby_predictions = {}
@@ -134,7 +134,7 @@ def main():
     else:
         print('Loaded Images Filtered: {}'.format(images_metadata_filtered_path))
 
-    dino_split_module = DINOSplit(db_json_path=images_metadata_filtered_path, upload_to_s3=UPLOAD_TO_S3)
+    dino_split_module = DinoSplit(db_json_path=images_metadata_filtered_path, upload_to_s3=UPLOAD_TO_S3)
     dino_split_module.run()
     print('Finished')
 

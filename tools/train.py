@@ -13,8 +13,6 @@
 # limitations under the License.
 
 import sys
-sys.path.extend(['.', '..'])
-
 import os
 import datetime
 import time
@@ -24,22 +22,19 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 
+from python_tools.OSUtils import ensure_dir
+
+sys.path.extend(['.', '..'])
+
 import utils
 import vision_transformer as vits
 from vision_transformer import DINOHead
-
 
 from dino_lib.core.data_augmentations import DataAugmentationDINO
 from dino_lib.config.train_config import TrainConfig
 from dino_lib.core.dataset import DinoDataset
 from dino_lib.core.loss import DINOLoss
 from dino_lib.core.functions import train_one_epoch
-
-from python_tools.OSUtils import ensure_dir
-
-IMAGES_FOLDER = os.path.expanduser('~/nanit/dino_data/crop_from_full_resolution_images/')
-SPLIT_PATH = os.path.expanduser('~/nanit/dino_data/crop_from_full_resolution_images_data_filter_split.pkl')    # Filtered - Uploading only RGB images
-GPU_IDS = 0
 
 
 def main():
@@ -179,12 +174,12 @@ def get_student_teacher_networks(train_config):
         teacher = nn.SyncBatchNorm.convert_sync_batchnorm(teacher)
 
         # we need DDP wrapper to have synchro batch norms working...
-        teacher = nn.parallel.DistributedDataParallel(teacher, device_ids=[GPU_IDS])
+        teacher = nn.parallel.DistributedDataParallel(teacher, device_ids=[train_config.gpu_ids])
         teacher_without_ddp = teacher.module
     else:
         # teacher_without_ddp and teacher are the same thing
         teacher_without_ddp = teacher
-    student = nn.DataParallel(student, device_ids=[GPU_IDS])
+    student = nn.DataParallel(student, device_ids=[train_config.gpu_ids])
     # teacher and student start with the same weights
     teacher_without_ddp.load_state_dict(student.module.state_dict())
     # there is no backpropagation through the teacher, so no need for gradients
@@ -200,7 +195,7 @@ def prepare_data(train_config):
         train_config.local_crops_scale,
         train_config.local_crops_number,
     )
-    dataset = DinoDataset(IMAGES_FOLDER, SPLIT_PATH, 'train', is_train=True, data_aug=transform)
+    dataset = DinoDataset(train_config.images_folder, train_config.split_path, 'train', is_train=True, data_aug=transform)
     data_loader = torch.utils.data.DataLoader(
         dataset,
         batch_size=train_config.batch_size_per_gpu,

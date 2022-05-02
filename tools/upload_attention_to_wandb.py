@@ -22,7 +22,7 @@ PRETRAINED_MODEL_PATH = os.path.expanduser('~/nanit/dino/dino_deitsmall8_pretrai
 CHECKPOINT_PATH = os.path.expanduser('~/nanit/dino/output/checkpoint_train_02052022.pth')
 DATASETS_TO_UPLOAD = ['train', 'val']
 BATCH_SIZE = 16
-NUM_WORKERS = 0
+NUM_WORKERS = 8
 USE_CHECKPOINT = True
 
 # Filtering - Uploading only RGB images

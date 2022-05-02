@@ -1,6 +1,12 @@
+import os
+
 
 class TrainConfig:
     def __init__(self):
+        self.images_folder = os.path.expanduser('~/nanit/dino_data/crop_from_full_resolution_images/')
+        self.split_path = os.path.expanduser('~/nanit/dino_data/crop_from_full_resolution_images_data_filter_split.pkl')  # Filtered - Uploading only RGB images
+        self.gpu_ids = 0
+
         self.output_dir = 'output/'
         self.saveckp_freq = 10
         self.print_freq = 100

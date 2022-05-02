@@ -34,7 +34,8 @@ class DinoDataset(Dataset):
             return input_tensor_to_model, pose_number, file_name
 
         else:
-            return self.data_aug(img)
+            img_resize = img.resize(self.image_size)     # Resize to imagenet size
+            return self.data_aug(img_resize)
 
     def __len__(self):
         return len(self.data)

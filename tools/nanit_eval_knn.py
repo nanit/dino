@@ -13,20 +13,30 @@ from dino_lib.core.dataset import DinoDataset
 
 IMAGES_FOLDER = os.path.expanduser('~/nanit/dino_data/crop_from_full_resolution_images/')
 SPLIT_PATH = os.path.expanduser('~/nanit/dino_data/crop_from_full_resolution_images_data_filter_split.pkl')    # Filtered - Uploading only RGB images
-FEATURES_SAVE_PATH = os.path.expanduser('~/nanit/dino_data/features_filter.pth')
+FEATURES_SAVE_FOLDER = os.path.expanduser('~/nanit/dino_data/')
 PRETRAINED_MODEL_PATH = os.path.expanduser('~/nanit/dino/dino_deitsmall8_pretrain.pth')
+CHECKPOINT_PATH = os.path.expanduser('~/nanit/dino/output/checkpoint_train_02052022.pth')
 DATASETS_TO_UPLOAD = ['train', 'val']
 BATCH_SIZE = 32
 NUM_WORKERS = 8
+USE_CHECKPOINT = True
+
+if USE_CHECKPOINT:
+    FEATURES_SAVE_PATH = os.path.join(FEATURES_SAVE_FOLDER, 'features_'+os.path.basename(CHECKPOINT_PATH))
+else:
+    FEATURES_SAVE_PATH = os.path.join(FEATURES_SAVE_FOLDER, 'features_'+os.path.basename(PRETRAINED_MODEL_PATH))
 
 
 def extract_features():
     if os.path.exists(FEATURES_SAVE_PATH):
-        checkpoint_data = torch.load(FEATURES_SAVE_PATH)
+        features_and_labels_data = torch.load(FEATURES_SAVE_PATH)
         print('Load Features and Labels from', FEATURES_SAVE_PATH)
-        return checkpoint_data
+        return features_and_labels_data
 
-    model, model_device = load_model_eval(PRETRAINED_MODEL_PATH)
+    if USE_CHECKPOINT:
+        model, model_device = load_model_eval(CHECKPOINT_PATH, checkpoint_key='student')
+    else:
+        model, model_device = load_model_eval(PRETRAINED_MODEL_PATH)
     features_dict = {}
     labels_dict = {}
     for dataset_name in DATASETS_TO_UPLOAD:
@@ -38,7 +48,7 @@ def extract_features():
         features = torch.zeros((n_images, model.embed_dim)).to(model_device)
         labels = torch.zeros((n_images, )).to(model_device)
         with torch.no_grad():
-            for i, (input_tensor_to_model, pose_classes) in enumerate(tqdm(data_loader, desc='{} (# Batches)'.format(dataset_name.capitalize()))):
+            for i, (input_tensor_to_model, pose_classes, filenames) in enumerate(tqdm(data_loader, desc='{} (# Batches)'.format(dataset_name.capitalize()))):
                 actual_batch_size = input_tensor_to_model.size(0)
                 features[(i*BATCH_SIZE):(i*BATCH_SIZE)+actual_batch_size] = model(input_tensor_to_model.to(model_device))
                 labels[(i*BATCH_SIZE):(i*BATCH_SIZE)+actual_batch_size] = pose_classes
@@ -48,24 +58,24 @@ def extract_features():
 
         features_dict[dataset_name], labels_dict[dataset_name] = features.cpu(), labels.cpu()
 
-    checkpoint_data = {
+    features_and_labels_data = {
         'features': features_dict,
         'labels': labels_dict
     }
-    torch.save(checkpoint_data, FEATURES_SAVE_PATH)
+    torch.save(features_and_labels_data, FEATURES_SAVE_PATH)
     print('Saved Features and Labels to', FEATURES_SAVE_PATH)
 
-    return checkpoint_data
+    return features_and_labels_data
 
 
 @torch.no_grad()
-def nanit_knn_classifier(checkpoint_data, k, temperature, num_classes=6):
+def nanit_knn_classifier(features_and_labels_data, k, temperature, num_classes=6):
     """
     based on knn_classifier as in eval_knn.py
     """
     correct_total, total = 0.0, 0
-    train_features, train_labels = checkpoint_data['features']['train'], checkpoint_data['labels']['train']
-    val_features, val_labels = checkpoint_data['features']['val'], checkpoint_data['labels']['val']
+    train_features, train_labels = features_and_labels_data['features']['train'], features_and_labels_data['labels']['train']
+    val_features, val_labels = features_and_labels_data['features']['val'], features_and_labels_data['labels']['val']
 
     train_features = train_features.t()
     num_test_images, num_chunks = val_labels.shape[0], 100
@@ -104,12 +114,12 @@ def nanit_knn_classifier(checkpoint_data, k, temperature, num_classes=6):
 
 
 def main():
-    checkpoint_data = extract_features()
+    features_and_labels_data = extract_features()
 
     k_list = [5, 10, 20, 50, 100]
 
     for k in k_list:
-        accuracy = nanit_knn_classifier(checkpoint_data, k, temperature=0.07, num_classes=6)
+        accuracy = nanit_knn_classifier(features_and_labels_data, k, temperature=0.07, num_classes=6)
         print(f"{k}-NN classifier result: {accuracy}")
 
 

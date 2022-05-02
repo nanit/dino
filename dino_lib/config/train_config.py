@@ -2,10 +2,11 @@
 class TrainConfig:
     def __init__(self):
         self.output_dir = 'output/'
-        self.saveckp_freq = 1
+        self.saveckp_freq = 10
+        self.print_freq = 100
 
         self.batch_size_per_gpu = 8
-        self.num_workers = 0
+        self.num_workers = 8
         self.epochs = 100
         self.warmup_epochs = 10
 

@@ -4,8 +4,7 @@ import vision_transformer as vits
 
 from PIL import Image
 
-VIT_ARCH = 'vit_small'
-PATCH_SIZE = 8
+from dino_lib.config.constants import VIT_ARCH, PATCH_SIZE
 
 
 def load_model_eval(pretrained_weights, arch=VIT_ARCH, patch_size=PATCH_SIZE, checkpoint_key='teacher'):

@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 from torchvision import transforms as pth_transforms
 
+from dino_lib.config.constants import IMAGE_SIZE, PATCH_SIZE
+
 
 def get_input_transforms(image_size):
     return pth_transforms.Compose([
@@ -11,7 +13,7 @@ def get_input_transforms(image_size):
     ])
 
 
-def get_input_tensor_to_model(_img, patch_size=8, image_size=(480, 480), transform=None):
+def get_input_tensor_to_model(_img, patch_size=8, image_size=IMAGE_SIZE, transform=None):
     if transform is None:
         transform = get_input_transforms(image_size)
     _input_tensor_to_model = transform(_img)
@@ -21,7 +23,7 @@ def get_input_tensor_to_model(_img, patch_size=8, image_size=(480, 480), transfo
     return _input_tensor_to_model
 
 
-def get_self_attention_from_image(_img, _model, device, patch_size=8, image_size=(480, 480), transform=None, threshold=None):
+def get_self_attention_from_image(_img, _model, device, patch_size=PATCH_SIZE, image_size=IMAGE_SIZE, transform=None, threshold=None):
     _input_tensor_to_model = get_input_tensor_to_model(_img, patch_size, image_size, transform).unsqueeze(0)
 
     w_featmap = _input_tensor_to_model.shape[-2] // patch_size
@@ -52,3 +54,20 @@ def get_self_attention_from_image(_img, _model, device, patch_size=8, image_size
     _attentions = nn.functional.interpolate(_attentions.unsqueeze(0), scale_factor=patch_size, mode="nearest")[0].cpu().numpy()
 
     return _input_tensor_to_model, _attentions, _th_attn, _nh
+
+
+def get_embedding_and_selfattention_from_batch(input_tensor_to_model, model, device, patch_size=PATCH_SIZE, image_size=IMAGE_SIZE, transform=None, threshold=None):
+    w_featmap = input_tensor_to_model.shape[-2] // patch_size
+    h_featmap = input_tensor_to_model.shape[-1] // patch_size
+
+    embedding, attentions = model.forward_and_last_selfattention(input_tensor_to_model.to(device))
+
+    batch_size, num_of_heads = attentions.shape[:2]   # number of head
+
+    # we keep only the output patch attention
+    # # # # DON'T SUPPORT IN THRESHOLDS # # # #
+
+    attentions = attentions[:, :, 0, 1:].reshape(batch_size, num_of_heads, w_featmap, h_featmap)
+    attentions = nn.functional.interpolate(attentions, scale_factor=patch_size, mode="nearest").cpu().numpy()
+
+    return embedding, attentions

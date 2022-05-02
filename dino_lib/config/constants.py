@@ -1,0 +1,4 @@
+PATCH_SIZE = 8
+IMAGE_SIZE = (480, 480)
+VIT_ARCH = 'vit_small'
+

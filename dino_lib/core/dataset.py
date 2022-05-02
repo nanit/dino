@@ -1,15 +1,12 @@
 import os
-import torch
 import pickle
 from torch.utils.data import Dataset
 
 from dino_lib.lib_utils.transforms import get_input_tensor_to_model
 from dino_lib.lib_utils.core_utils import load_image_from_path
+from dino_lib.config.constants import PATCH_SIZE, IMAGE_SIZE
 
 from python_tools.Mappings import gen_pose_class_to_number_mapping
-
-PATCH_SIZE = 8
-IMAGE_SIZE = (480, 480)
 
 
 class DinoDataset(Dataset):
@@ -27,13 +24,14 @@ class DinoDataset(Dataset):
 
     def __getitem__(self, idx):
         data_rec = self.data[idx]
-        image_path = os.path.join(self.root_folder, data_rec['file_name'])
+        file_name = data_rec['file_name']
+        image_path = os.path.join(self.root_folder, file_name)
         img = load_image_from_path(image_path)
 
         if self.data_aug is None:
             input_tensor_to_model = get_input_tensor_to_model(img, patch_size=self.patch_size, image_size=self.image_size)
             pose_number = self.pose_class_to_number[data_rec['pose']]
-            return input_tensor_to_model, pose_number
+            return input_tensor_to_model, pose_number, file_name
 
         else:
             return self.data_aug(img)

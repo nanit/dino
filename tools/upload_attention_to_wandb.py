@@ -19,9 +19,9 @@ from python_tools.Mappings import gen_pose_number_to_pose_class_mapping
 IMAGES_FOLDER = os.path.expanduser('~/nanit/dino_data/crop_from_full_resolution_images/')
 SPLIT_PATH = os.path.expanduser('~/nanit/dino_data/crop_from_full_resolution_images_data_filter_split.pkl')
 PRETRAINED_MODEL_PATH = os.path.expanduser('~/nanit/dino/dino_deitsmall8_pretrain.pth')
-CHECKPOINT_PATH = os.path.expanduser('~/nanit/dino/output/checkpoint_train_02052022.pth')
+CHECKPOINT_PATH = os.path.expanduser('~/nanit/dino/output/checkpoint_train_04052022.pth')
 DATASETS_TO_UPLOAD = ['train', 'val']
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 NUM_WORKERS = 8
 USE_CHECKPOINT = True
 
